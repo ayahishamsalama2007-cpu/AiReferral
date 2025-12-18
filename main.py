@@ -42,10 +42,9 @@ def get_conn():
 @app.post("/insert")
 def insert():
     try:
-        payload = request.get_json(force=True)
+        payload = request.get_json(force=True)["data"]   # <-- new line
         if not isinstance(payload, list) or len(payload) != 9:
-            return jsonify({"error": "Send 9-element list: "+", ".join(EXPECTED_COLS)}), 400
-
+            return jsonify({"error": "Send 9-element list under key 'data'"}), 400
         X = pd.DataFrame([payload], columns=EXPECTED_COLS)
         triage_flag = int(pipe.predict(X)[0])
 
@@ -91,6 +90,7 @@ def summary():
 if __name__ == "__main__":
         ensure_table()
         app.run(host="0.0.0.0", port=8080, debug=False)
+
 
 
 
