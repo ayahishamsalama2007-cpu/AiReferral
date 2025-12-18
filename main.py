@@ -1,4 +1,4 @@
-# main.py  ––  single-file Flask API (Colab-ready)
+# main.py  (single-file, copy–paste–run)
 import os
 import joblib
 from flask import Flask, request, jsonify
@@ -6,22 +6,25 @@ from dotenv import load_dotenv
 import mysql.connector
 import pandas as pd
 
+from db import ensure_table
+
 load_dotenv()
 
 app = Flask(__name__)
 
 # ---------- config ----------
-MODEL_PATH = "rf_model.pkl"          # pickle produced by your Colab notebook
+MODEL_PATH = "rf_model.pkl"          # sklearn pipeline (ColumnTransformer + RF)
 EXPECTED_COLS = [
-    "age", "PainGrade", "BlooddpressurSystol", "BlooddpressurDiastol",
-    "PulseRate", "RespiratoryRate", "O2Saturation", "gender_Male"
+    "gender", "age", "ChiefComplaint", "PainGrade",
+    "BloodPressure_high", "BloodPressure_low",
+    "PulseRate", "Respiration", "O2Saturation"
 ]
 
 # ---------- load model ----------
 try:
-    model = joblib.load(MODEL_PATH)          # any sklearn-style estimator
+    pipe = joblib.load("rf_model.pkl")
 except FileNotFoundError:
-    raise RuntimeError(f"Model file {MODEL_PATH} not found – place it in cwd")
+    raise RuntimeError(f"Model file {MODEL_PATH} not found – place it in the project root")
 
 # ---------- DB helpers ----------
 def get_conn():
@@ -30,70 +33,56 @@ def get_conn():
         user=os.getenv('DB_USER'),
         password=os.getenv('DB_PASSWORD'),
         database=os.getenv('DB_NAME'),
-        port=int(os.getenv('DB_PORT', 3306)),
+        port=int(os.getenv('DB_PORT', 3306))
     )
 
-def ensure_table():
-    """Create table once at start-up if it does not exist."""
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS patient_records (
-                id              INT AUTO_INCREMENT PRIMARY KEY,
-                age             FLOAT,
-                PainGrade       FLOAT,
-                BlooddpressurSystol  FLOAT,
-                BlooddpressurDiastol FLOAT,
-                PulseRate       FLOAT,
-                RespiratoryRate FLOAT,
-                O2Saturation    FLOAT,
-                gender_Male     BOOLEAN,
-                TriageGrade_urgent BOOLEAN,
-                ChiefComplaint  TEXT,
-                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
 
 # ---------- routes ----------
-@app.post("/predict")
-def predict():
-    """
-    Expects JSON list with 8 numeric/bool features in EXPECTED_COLS order.
-    Returns {"triage_urgent": bool, "id": int} after DB insert.
-    """
+@app.post("/insert")
+def insert():
     try:
         payload = request.get_json(force=True)
-        if not isinstance(payload, list) or len(payload) != 8:
-            return jsonify({"error": "Send 8-element list: "+", ".join(EXPECTED_COLS)}), 400
+        if not isinstance(payload, list) or len(payload) != 9:
+            return jsonify({"error": "Send 9-element list: "+", ".join(EXPECTED_COLS)}), 400
 
         X = pd.DataFrame([payload], columns=EXPECTED_COLS)
-        triage_urgent = bool(model.predict(X)[0])          # model outputs 0/1 → False/True
+        triage_flag = int(pipe.predict(X)[0])
 
         sql = """INSERT INTO patient_records
-                 (age,PainGrade,BlooddpressurSystol,BlooddpressurDiastol,
-                  PulseRate,RespiratoryRate,O2Saturation,gender_Male,TriageGrade_urgent)
-                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+                 (gender,age,ChiefComplaint,PainGrade,BloodPressure_high,BloodPressure_low,PulseRate,Respiration,O2Saturation,TriageLevel)
+                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
         with get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, payload + [triage_urgent])
+            cur.execute(sql, payload + [triage_flag])
             conn.commit()
-            return jsonify({"id": cur.lastrowid, "triage_urgent": triage_urgent}), 201
+            return jsonify({"id": cur.lastrowid, "triage_level": triage_flag}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @app.get("/summary")
 def summary():
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            cur.execute("SELECT COUNT(*) AS total FROM patient_records")
-            total = cur.fetchone()['total']
-            cur.execute("SELECT COUNT(*) AS urgent FROM patient_records WHERE TriageGrade_urgent=1")
-            urgent = cur.fetchone()['urgent']
-            cur.execute("SELECT * FROM patient_records ORDER BY id DESC LIMIT 100")
-            records = cur.fetchall()
-            return jsonify({"total_records": total,
-                            "urgent_count": urgent,
-                            "recent": records})
+            # Fetch all records
+            cur.execute("SELECT * FROM patient_records")
+            all_records = cur.fetchall()
+
+            # Count records where TriageLevel is 0
+            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 0")
+            count_triage_0 = cur.fetchone()['count']
+
+            # Count records where TriageLevel is 1
+            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 1")
+            count_triage_1 = cur.fetchone()['count']
+
+            # Total records
+            total_records = len(all_records)
+
+            return jsonify({
+                'total_records': total_records,
+                'triage_level_0_count': count_triage_0,
+                'triage_level_1_count': count_triage_1,
+                'records': all_records
+            })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
