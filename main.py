@@ -12,17 +12,18 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ---------- config ----------
-MODEL_PATH = "rf_model.pkl"          # sklearn pipeline (ColumnTransformer + RF)
+# ---------- config ---------- 
+MODEL_PATH = "rf_model.pkl"         
 EXPECTED_COLS = [
     "gender", "age", "ChiefComplaint", "PainGrade",
-    "BloodPressure_high", "BloodPressure_low",
+    "BlooddpressurDiastol", "BlooddpressurSystol",
     "PulseRate", "Respiration", "O2Saturation"
 ]
 
 # ---------- load model ----------
 try:
     pipe = joblib.load("rf_model.pkl")
+    
 except FileNotFoundError:
     raise RuntimeError(f"Model file {MODEL_PATH} not found – place it in the project root")
 
@@ -49,7 +50,7 @@ def insert():
         triage_flag = int(pipe.predict(X)[0])
 
         sql = """INSERT INTO patient_records
-                 (gender,age,ChiefComplaint,PainGrade,BloodPressure_high,BloodPressure_low,PulseRate,Respiration,O2Saturation,TriageLevel)
+                 (gender,age,ChiefComplaint,PainGrade,BlooddpressurDiastol,BlooddpressurSystol,PulseRate,Respiration,O2Saturation,TriageLevel)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, payload + [triage_flag])
@@ -57,6 +58,7 @@ def insert():
             return jsonify({"id": cur.lastrowid, "triage_level": triage_flag}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.get("/summary")
 def summary():
@@ -84,9 +86,17 @@ def summary():
                 'records': all_records
             })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({"error": str(e)}), 500    
 # ---------- start ----------
 if __name__ == "__main__":
-    ensure_table()
-    app.run(host="0.0.0.0", port=8080, debug=False)
+        ensure_table()
+         app.run(host="0.0.0.0", port=8080, debug=False)
+
+
+
+
+
+
+
+
+
