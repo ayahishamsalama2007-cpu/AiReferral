@@ -49,7 +49,7 @@ def insert():
         X = pd.DataFrame([payload], columns=EXPECTED_COLS)
         triage_flag = int(pipe.predict(X)[0])
 
-        sql = """INSERT INTO patient_records
+        sql = """INSERT INTO patients
                  (gender,age,ChiefComplaint,PainGrade,BlooddpressurDiastol,BlooddpressurSystol,PulseRate,Respiration,O2Saturation,TriageLevel)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
         with get_conn() as conn, conn.cursor() as cur:
@@ -65,15 +65,15 @@ def summary():
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
             # Fetch all records
-            cur.execute("SELECT * FROM patient_records")
+            cur.execute("SELECT * FROM patients")
             all_records = cur.fetchall()
 
             # Count records where TriageLevel is 0
-            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 0")
+            cur.execute("SELECT COUNT(*) AS count FROM patients WHERE TriageLevel = 0")
             count_triage_0 = cur.fetchone()['count']
 
             # Count records where TriageLevel is 1
-            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 1")
+            cur.execute("SELECT COUNT(*) AS count FROM patients WHERE TriageLevel = 1")
             count_triage_1 = cur.fetchone()['count']
 
             # Total records
@@ -91,6 +91,7 @@ def summary():
 if __name__ == "__main__":
         ensure_table()
         app.run(host="0.0.0.0", port=8080, debug=False)
+
 
 
 
