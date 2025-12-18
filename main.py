@@ -23,7 +23,7 @@ EXPECTED_COLS = [
 # ---------- load model ----------
 try:
     pipe = joblib.load("rf_model.pkl")
-    ct   = pipe.named_steps['columntransformer']
+    
 except FileNotFoundError:
     raise RuntimeError(f"Model file {MODEL_PATH} not found – place it in the project root")
 
@@ -90,10 +90,7 @@ def summary():
 # ---------- start ----------
 if __name__ == "__main__":
         ensure_table()
-
-
-    app.run(host="0.0.0.0", port=8080, debug=False)
-
+        app.run(host="0.0.0.0", port=8080, debug=False)
 
 
 
