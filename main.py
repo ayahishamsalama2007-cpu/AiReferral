@@ -42,13 +42,14 @@ def get_conn():
 @app.post("/insert")
 def insert():
     try:
-        payload = request.get_json(force=True)["data"]   # <-- new line
+        payload = request.get_json(force=True)
         if not isinstance(payload, list) or len(payload) != 9:
-            return jsonify({"error": "Send 9-element list under key 'data'"}), 400
+            return jsonify({"error": "Send 9-element list: "+", ".join(EXPECTED_COLS)}), 400
+
         X = pd.DataFrame([payload], columns=EXPECTED_COLS)
         triage_flag = int(pipe.predict(X)[0])
 
-        sql = """INSERT INTO patients
+        sql = """INSERT INTO patient_records
                  (gender,age,ChiefComplaint,PainGrade,BlooddpressurDiastol,BlooddpressurSystol,PulseRate,Respiration,O2Saturation,TriageLevel)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
         with get_conn() as conn, conn.cursor() as cur:
@@ -64,15 +65,15 @@ def summary():
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
             # Fetch all records
-            cur.execute("SELECT * FROM patients")
+            cur.execute("SELECT * FROM patient_records")
             all_records = cur.fetchall()
 
             # Count records where TriageLevel is 0
-            cur.execute("SELECT COUNT(*) AS count FROM patients WHERE TriageLevel = 0")
+            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 0")
             count_triage_0 = cur.fetchone()['count']
 
             # Count records where TriageLevel is 1
-            cur.execute("SELECT COUNT(*) AS count FROM patients WHERE TriageLevel = 1")
+            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 1")
             count_triage_1 = cur.fetchone()['count']
 
             # Total records
@@ -90,8 +91,6 @@ def summary():
 if __name__ == "__main__":
         ensure_table()
         app.run(host="0.0.0.0", port=8080, debug=False)
-
-
 
 
 
