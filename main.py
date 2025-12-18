@@ -37,39 +37,20 @@ def get_conn():
         port=int(os.getenv('DB_PORT', 3306))
     )
 
-from sklearn.preprocessing import LabelEncoder
 
-# Initialize label encoders for categorical columns
-gender_encoder = LabelEncoder().fit(["male", "female"])
-
+# ---------- routes ----------
 @app.post("/insert")
 def insert():
     try:
         payload = request.get_json(force=True)
         if not isinstance(payload, list) or len(payload) != 9:
             return jsonify({"error": "Send 9-element list: "+", ".join(EXPECTED_COLS)}), 400
-        
-        # Preprocess categorical variables
-        payload[0] = gender_encoder.transform([payload[0]])[0]  # Encode gender
 
         X = pd.DataFrame([payload], columns=EXPECTED_COLS)
-        
-        # Ensure all values are in the correct format
-        X = X.astype({
-            'age': 'float',
-            'PainGrade': 'float',
-            'BlooddpressurDiastol': 'float',
-            'BlooddpressurSystol': 'float',
-            'PulseRate': 'float',
-            'Respiration': 'float',
-            'O2Saturation': 'float'
-        })
-
         triage_flag = int(pipe.predict(X)[0])
 
         sql = """INSERT INTO patient_records
-                 (gender, age, ChiefComplaint, PainGrade, BlooddpressurDiastol, 
-                 BlooddpressurSystol, PulseRate, Respiration, O2Saturation, TriageLevel)
+                 (gender,age,ChiefComplaint,PainGrade,BlooddpressurDiastol,BlooddpressurSystol,PulseRate,Respiration,O2Saturation,TriageLevel)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, payload + [triage_flag])
@@ -109,7 +90,7 @@ def summary():
 # ---------- start ----------
 if __name__ == "__main__":
         ensure_table()
-        app.run(host="0.0.0.0", port=8080, debug=False)
+         app.run(host="0.0.0.0", port=8080, debug=False)
 
 
 
