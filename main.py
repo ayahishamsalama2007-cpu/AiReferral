@@ -59,30 +59,41 @@ def insert():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.get("/records")
-def records():
-    try:
-            ensure_table()
 
-        limit = int(request.args.get("limit", 0))
-        sql = "SELECT * FROM patient_records ORDER BY id DESC" + (f" LIMIT {limit}" if limit else "")
-        with get_conn() as conn:
-            rows = pd.read_sql(sql, conn).to_dict(orient="records")
-        return jsonify(rows)
+@app.get("/summary")
+def summary():
+    try:
+        with get_conn() as conn, conn.cursor(dictionary=True) as cur:
+            # Fetch all records
+            cur.execute("SELECT * FROM patient_records")
+            all_records = cur.fetchall()
+
+            # Count records where TriageLevel is 0
+            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 0")
+            count_triage_0 = cur.fetchone()['count']
+
+            # Count records where TriageLevel is 1
+            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 1")
+            count_triage_1 = cur.fetchone()['count']
+
+            # Total records
+            total_records = len(all_records)
+
+            return jsonify({
+                'total_records': total_records,
+                'triage_level_0_count': count_triage_0,
+                'triage_level_1_count': count_triage_1,
+                'records': all_records
+            })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-        # render
-    
-@app.route("/")
-def home():
-    return "Hello from Render!"
-    
+        return jsonify({"error": str(e)}), 500    
 # ---------- start ----------
 if __name__ == "__main__":
         ensure_table()
 
 
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
 
 
