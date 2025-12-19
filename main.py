@@ -1,4 +1,4 @@
-# ---------- main.py ----------
+in this # ---------- main.py ----------
 import os
 import joblib
 from flask import Flask, request, jsonify
@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ---------- Configuration ----------
-MODEL_PATH = "rf_model.pkl"
+MODEL_PATH = "rf_pipeline.pkl"
 EXPECTED_FEATURES = [
     "gender", "age", "ChiefComplaint", "PainGrade",
     "BlooddpressurDiastol", "BlooddpressurSystol",
@@ -40,9 +40,9 @@ def get_conn():
     return mysql.connector.connect(**DB_CFG)
 
 def ensure_table():
-    """Create the patient_records table if it does not exist."""
+    """Create the aiReferral table if it does not exist."""
     ddl = """
-    CREATE TABLE IF NOT EXISTS patient_records (
+    CREATE TABLE IF NOT EXISTS aiReferral (
         id INT AUTO_INCREMENT PRIMARY KEY,
         gender VARCHAR(10),
         age INT,
@@ -65,55 +65,54 @@ def ensure_table():
 
 @app.post("/insert")
 def insert():
-    """Insert a new patient record, run prediction, save to DB."""
+    """Insert a new patient record, run prediction, save to DB, return saved row."""
     try:
         data = request.get_json(force=True)
 
-        # Validate input
+        # --- basic validation ---
         if not all(f in data for f in EXPECTED_FEATURES):
             missing = [f for f in EXPECTED_FEATURES if f not in data]
             return jsonify(error=f"Missing fields: {missing}"), 400
 
-        # Prepare prediction input
+        # --- prediction ---
         X = pd.DataFrame([data])[EXPECTED_FEATURES]
-
-        # Run prediction using pipeline
         pred_int = int(pref.predict(X)[0])
-        proba = pref.predict_proba(X)[0].tolist()
 
-        # Store in database
+        # --- insert ---
         cols = EXPECTED_FEATURES + ["TriageLevel"]
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
-        sql = f"INSERT INTO patient_records ({','.join(cols)}) VALUES ({placeholders})"
-
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, vals)
+        sql_insert = f"""
+            INSERT INTO patient_records ({','.join(cols)})
+            VALUES ({placeholders})
+        """
+        with get_conn() as conn, conn.cursor(dictionary=True) as cur:
+            cur.execute(sql_insert, vals)
+            new_id = cur.lastrowid                       # MySQL auto-increment id
+            # read the row we just wrote
+            cur.execute(
+                "SELECT * FROM aiReferral WHERE id = %s",
+                (new_id,)
+            )
+            saved_row = cur.fetchone()                   # dict with all columns
             conn.commit()
 
-        # Return response
-        return jsonify(
-            prediction=pred_int,
-            probability={
-                "not_urgent": round(proba[0], 3),
-                "urgent": round(proba[1], 3)
-            }
-        )
+        # --- send the database row back ---
+        return jsonify(saved_row), 201
+
     except Exception as e:
         return jsonify(error=str(e)), 400
-
-
 @app.get("/summary")
 def summary():
     """Return all patient records and triage level stats."""
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            cur.execute("SELECT * FROM patient_records ORDER BY created_at DESC")
+            cur.execute("SELECT * FROM aiReferral ORDER BY created_at DESC")
             records = cur.fetchall()
 
-            cur.execute("SELECT COUNT(*) AS c FROM patient_records WHERE TriageLevel=0")
+            cur.execute("SELECT COUNT(*) AS c FROM aiReferral WHERE TriageLevel=0")
             count_0 = cur.fetchone()['c']
-            cur.execute("SELECT COUNT(*) AS c FROM patient_records WHERE TriageLevel=1")
+            cur.execute("SELECT COUNT(*) AS c FROM aiReferral WHERE TriageLevel=1")
             count_1 = cur.fetchone()['c']
 
             return jsonify(
