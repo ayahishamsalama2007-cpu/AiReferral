@@ -1,4 +1,4 @@
-# main.py  –  single-file, copy–paste–run
+# ---------- main.py  (single-file, copy-paste-run) ----------
 import os
 import joblib
 from flask import Flask, request, jsonify
@@ -20,7 +20,7 @@ EXPECTED_FEATURES = [
 
 # ---------- load model ----------
 try:
-    pipe = joblib.load(MODEL_PATH)
+    pref = joblib.load(MODEL_PATH)          # <── model object
 except FileNotFoundError:
     raise RuntimeError(f"Model file {MODEL_PATH} not found – place it in the project root")
 
@@ -61,13 +61,14 @@ def ensure_table():
 # ---------- routes ----------
 @app.post("/insert")
 def insert():
+    """Insert a new patient record, run model, store prediction."""
     try:
         data = request.get_json(force=True)
 
         # 1. prediction
         X = pd.DataFrame([data])[EXPECTED_FEATURES]
-        pred_int = int(pipe.predict(X)[0])          # <-- pipe, not model
-        proba = pipe.predict_proba(X)[0].tolist()   # <-- pipe, not model
+        pred_int = int(pref.predict(X)[0])
+        proba = pref.predict_proba(X)[0].tolist()
 
         # 2. persist to DB
         cols = EXPECTED_FEATURES + ["TriageLevel"]
@@ -85,6 +86,8 @@ def insert():
         )
     except Exception as e:
         return jsonify(error=str(e)), 400
+
+
 @app.get("/summary")
 def summary():
     """Return aggregate stats and all rows."""
@@ -110,4 +113,3 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
-
