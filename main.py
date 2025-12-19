@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ---------- Configuration ----------
-MODEL_PATH = "rf_model.pkl"
+MODEL_PATH = "rf_pipeline.pkl"
 EXPECTED_FEATURES = [
     "gender", "age", "ChiefComplaint", "PainGrade",
     "BlooddpressurDiastol", "BlooddpressurSystol",
@@ -123,4 +123,5 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
