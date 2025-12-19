@@ -85,7 +85,7 @@ def insert():
         cols = EXPECTED_FEATURES + ["TriageLevel"]
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
-        sql = f"INSERT INTO patient_records ({','.join(cols)}) VALUES ({placeholders})"
+        sql = f"INSERT INTO patients ({','.join(cols)}) VALUES ({placeholders})"
 
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, vals)
@@ -129,4 +129,5 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
