@@ -119,7 +119,7 @@ def summary():
                 total_records=len(records),
                 triage_level_0_count=count_0,
                 triage_level_1_count=count_1,
-                records=records
+                
             )
     except Exception as e:
         return jsonify(error=str(e)), 500
@@ -128,6 +128,7 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
 
 
