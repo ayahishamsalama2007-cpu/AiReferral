@@ -12,7 +12,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ---------- Configuration ----------
-MODEL_PATH = "rf_pipeline.pkl"
+MODEL_PATH = "rf_model.pkl"
 EXPECTED_FEATURES = [
     "gender", "age", "ChiefComplaint", "PainGrade",
     "BlooddpressurDiastol", "BlooddpressurSystol",
@@ -65,43 +65,44 @@ def ensure_table():
 
 @app.post("/insert")
 def insert():
-    """Insert a new patient record, run prediction, save to DB, return saved row."""
+    """Insert a new patient record, run prediction, save to DB."""
     try:
         data = request.get_json(force=True)
 
-        # --- basic validation ---
+        # Validate input
         if not all(f in data for f in EXPECTED_FEATURES):
             missing = [f for f in EXPECTED_FEATURES if f not in data]
             return jsonify(error=f"Missing fields: {missing}"), 400
 
-        # --- prediction ---
+        # Prepare prediction input
         X = pd.DataFrame([data])[EXPECTED_FEATURES]
-        pred_int = int(pref.predict(X)[0])
 
-        # --- insert ---
+        # Run prediction using pipeline
+        pred_int = int(pref.predict(X)[0])
+        proba = pref.predict_proba(X)[0].tolist()
+
+        # Store in database
         cols = EXPECTED_FEATURES + ["TriageLevel"]
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
-        sql_insert = f"""
-            INSERT INTO patient_records ({','.join(cols)})
-            VALUES ({placeholders})
-        """
-        with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            cur.execute(sql_insert, vals)
-            new_id = cur.lastrowid                       # MySQL auto-increment id
-            # read the row we just wrote
-            cur.execute(
-                "SELECT * FROM patient_records WHERE id = %s",
-                (new_id,)
-            )
-            saved_row = cur.fetchone()                   # dict with all columns
+        sql = f"INSERT INTO patient_records ({','.join(cols)}) VALUES ({placeholders})"
+
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, vals)
             conn.commit()
 
-        # --- send the database row back ---
-        return jsonify(saved_row), 201
-
+        # Return response
+        return jsonify(
+            prediction=pred_int,
+            probability={
+                "not_urgent": round(proba[0], 3),
+                "urgent": round(proba[1], 3)
+            }
+        )
     except Exception as e:
         return jsonify(error=str(e)), 400
+
+
 @app.get("/summary")
 def summary():
     """Return all patient records and triage level stats."""
@@ -119,7 +120,7 @@ def summary():
                 total_records=len(records),
                 triage_level_0_count=count_0,
                 triage_level_1_count=count_1,
-                
+                records=records
             )
     except Exception as e:
         return jsonify(error=str(e)), 500
@@ -128,7 +129,3 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
-
-
-
-
