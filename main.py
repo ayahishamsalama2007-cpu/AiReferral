@@ -61,18 +61,17 @@ def ensure_table():
 # ---------- routes ----------
 @app.post("/insert")
 def insert():
-    """Insert a new patient record, run model, store prediction."""
     try:
         data = request.get_json(force=True)
 
         # 1. prediction
         X = pd.DataFrame([data])[EXPECTED_FEATURES]
-        pred_int = int(pipe.predict(X)[0])
-        proba = pipe.predict_proba(X)[0].tolist()
+        pred_int = int(pipe.predict(X)[0])          # <-- pipe, not model
+        proba = pipe.predict_proba(X)[0].tolist()   # <-- pipe, not model
 
         # 2. persist to DB
-        cols = EXPECT_FEATURES + ["TriageLevel"]
-        vals = [data[f] for f in EXPECT_FEATURES] + [pred_int]
+        cols = EXPECTED_FEATURES + ["TriageLevel"]
+        vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         sql = f"INSERT INTO patient_records ({','.join(cols)}) VALUES ({','.join(['%s']*len(cols))})"
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, vals)
@@ -86,8 +85,6 @@ def insert():
         )
     except Exception as e:
         return jsonify(error=str(e)), 400
-
-
 @app.get("/summary")
 def summary():
     """Return aggregate stats and all rows."""
@@ -113,3 +110,4 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
