@@ -1,4 +1,4 @@
-# main.py  (single-file, copy–paste–run)
+# main.py  –  single-file, copy–paste–run
 import os
 import joblib
 from flask import Flask, request, jsonify
@@ -6,15 +6,13 @@ from dotenv import load_dotenv
 import mysql.connector
 import pandas as pd
 
-from db import ensure_table
-
 load_dotenv()
 
 app = Flask(__name__)
 
-# ---------- config ---------- 
-MODEL_PATH = "rf_model.pkl"         
-EXPECTED_COLS = [
+# ---------- config ----------
+MODEL_PATH = "rf_model.pkl"
+EXPECTED_FEATURES = [
     "gender", "age", "ChiefComplaint", "PainGrade",
     "BlooddpressurDiastol", "BlooddpressurSystol",
     "PulseRate", "Respiration", "O2Saturation"
@@ -22,81 +20,96 @@ EXPECTED_COLS = [
 
 # ---------- load model ----------
 try:
-    pipe = joblib.load("rf_model.pkl")
-    
+    pipe = joblib.load(MODEL_PATH)
 except FileNotFoundError:
     raise RuntimeError(f"Model file {MODEL_PATH} not found – place it in the project root")
 
 # ---------- DB helpers ----------
-def get_conn():
-    return mysql.connector.connect(
-        host=os.getenv('DB_HOST'),
-        user=os.getenv('DB_USER'),
-        password=os.getenv('DB_PASSWORD'),
-        database=os.getenv('DB_NAME'),
-        port=int(os.getenv('DB_PORT', 3306))
-    )
+DB_CFG = dict(
+    host=os.getenv('DB_HOST'),
+    user=os.getenv('DB_USER'),
+    password=os.getenv('DB_PASSWORD'),
+    database=os.getenv('DB_NAME'),
+    port=int(os.getenv('DB_PORT', 3306))
+)
 
+def get_conn():
+    return mysql.connector.connect(**DB_CFG)
+
+def ensure_table():
+    """Create the table if it does not yet exist."""
+    ddl = """
+    CREATE TABLE IF NOT EXISTS patient_records (
+        id              INT AUTO_INCREMENT PRIMARY KEY,
+        gender          VARCHAR(10),
+        age             INT,
+        ChiefComplaint  VARCHAR(255),
+        PainGrade       INT,
+        BlooddpressurDiastol  INT,
+        BlooddpressurSystol   INT,
+        PulseRate       INT,
+        Respiration     INT,
+        O2Saturation    INT,
+        TriageLevel     TINYINT,
+        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(ddl)
+        conn.commit()
 
 # ---------- routes ----------
 @app.post("/insert")
 def insert():
+    """Insert a new patient record, run model, store prediction."""
     try:
-        payload = request.get_json(force=True)
-        if not isinstance(payload, list) or len(payload) != 9:
-            return jsonify({"error": "Send 9-element list: "+", ".join(EXPECTED_COLS)}), 400
+        data = request.get_json(force=True)
 
-        X = pd.DataFrame([payload], columns=EXPECTED_COLS)
-        triage_flag = int(pipe.predict(X)[0])
+        # 1. prediction
+        X = pd.DataFrame([data])[EXPECTED_FEATURES]
+        pred_int = int(pipe.predict(X)[0])
+        proba = pipe.predict_proba(X)[0].tolist()
 
-        sql = """INSERT INTO patient_records
-                 (gender,age,ChiefComplaint,PainGrade,BlooddpressurDiastol,BlooddpressurSystol,PulseRate,Respiration,O2Saturation,TriageLevel)
-                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+        # 2. persist to DB
+        cols = EXPECT_FEATURES + ["TriageLevel"]
+        vals = [data[f] for f in EXPECT_FEATURES] + [pred_int]
+        sql = f"INSERT INTO patient_records ({','.join(cols)}) VALUES ({','.join(['%s']*len(cols))})"
         with get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, payload + [triage_flag])
+            cur.execute(sql, vals)
             conn.commit()
-            return jsonify({"id": cur.lastrowid, "triage_level": triage_flag}), 201
+
+        # 3. respond
+        return jsonify(
+            prediction=pred_int,
+            probability={"not_urgent": round(proba[0], 3),
+                         "urgent":     round(proba[1], 3)}
+        )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify(error=str(e)), 400
 
 
 @app.get("/summary")
 def summary():
+    """Return aggregate stats and all rows."""
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            # Fetch all records
-            cur.execute("SELECT * FROM patient_records")
-            all_records = cur.fetchall()
+            cur.execute("SELECT * FROM patient_records ORDER BY created_at DESC")
+            rows = cur.fetchall()
 
-            # Count records where TriageLevel is 0
-            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 0")
-            count_triage_0 = cur.fetchone()['count']
+            cur.execute("SELECT COUNT(*) AS c FROM patient_records WHERE TriageLevel=0")
+            cnt_0 = cur.fetchone()['c']
+            cur.execute("SELECT COUNT(*) AS c FROM patient_records WHERE TriageLevel=1")
+            cnt_1 = cur.fetchone()['c']
 
-            # Count records where TriageLevel is 1
-            cur.execute("SELECT COUNT(*) AS count FROM patient_records WHERE TriageLevel = 1")
-            count_triage_1 = cur.fetchone()['count']
-
-            # Total records
-            total_records = len(all_records)
-
-            return jsonify({
-                'total_records': total_records,
-                'triage_level_0_count': count_triage_0,
-                'triage_level_1_count': count_triage_1,
-                'records': all_records
-            })
+            return jsonify(total_records=len(rows),
+                           triage_level_0_count=cnt_0,
+                           triage_level_1_count=cnt_1,
+                           records=rows)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500    
+        return jsonify(error=str(e)), 500
+
+
 # ---------- start ----------
 if __name__ == "__main__":
-        ensure_table()
-        app.run(host="0.0.0.0", port=8080, debug=False)
-
-
-
-
-
-
-
-
-
+    ensure_table()
+    app.run(host="0.0.0.0", port=8080, debug=False)
