@@ -69,19 +69,16 @@ def insert():
     try:
         data = request.get_json(force=True)
 
-        # Validate input
+        # --- validation unchanged ---
         if not all(f in data for f in EXPECTED_FEATURES):
             missing = [f for f in EXPECTED_FEATURES if f not in data]
             return jsonify(error=f"Missing fields: {missing}"), 400
 
-        # Prepare prediction input
+        # --- prediction unchanged ---
         X = pd.DataFrame([data])[EXPECTED_FEATURES]
-
-        # Run prediction using pipeline
         pred_int = int(pref.predict(X)[0])
-        proba = pref.predict_proba(X)[0].tolist()
 
-        # Store in database
+        # --- insert unchanged ---
         cols = EXPECTED_FEATURES + ["TriageLevel"]
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
@@ -91,17 +88,14 @@ def insert():
             cur.execute(sql, vals)
             conn.commit()
 
-        # Return response
+        # --- return the concrete values instead of probabilities ---
         return jsonify(
             prediction=pred_int,
-            probability={
-                "not_urgent": round(proba[0], 3),
-                "urgent": round(proba[1], 3)
-            }
+            **{f: data[f] for f in EXPECTED_FEATURES}   # flatten each feature
         )
+
     except Exception as e:
         return jsonify(error=str(e)), 400
-
 
 @app.get("/summary")
 def summary():
@@ -129,3 +123,4 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
