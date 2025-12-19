@@ -42,7 +42,7 @@ def get_conn():
 def ensure_table():
     """Create the patient_records table if it does not exist."""
     ddl = """
-    CREATE TABLE IF NOT EXISTS patient_referral (
+    CREATE TABLE IF NOT EXISTS patient_record (
         id INT AUTO_INCREMENT PRIMARY KEY,
         gender VARCHAR(10),
         age INT,
@@ -88,7 +88,7 @@ def insert():
         cols = EXPECTED_FEATURES + ["TriageLevel"]
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
-        sql = f"INSERT INTO patient_referral ({','.join(cols)}) VALUES ({placeholders})"
+        sql = f"INSERT INTO patient_record ({','.join(cols)}) VALUES ({placeholders})"
 
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, vals)
@@ -107,12 +107,12 @@ def summary():
     """Return all patient records and triage level stats."""
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            cur.execute("SELECT * FROM patient_referral ORDER BY created_at DESC")
+            cur.execute("SELECT * FROM patient_record ORDER BY created_at DESC")
             records = cur.fetchall()
 
-            cur.execute("SELECT COUNT(*) AS c FROM patient_referral WHERE TriageLevel=0")
+            cur.execute("SELECT COUNT(*) AS c FROM patient_record WHERE TriageLevel=0")
             count_0 = cur.fetchone()['c']
-            cur.execute("SELECT COUNT(*) AS c FROM patient_referral WHERE TriageLevel=1")
+            cur.execute("SELECT COUNT(*) AS c FROM patient_record WHERE TriageLevel=1")
             count_1 = cur.fetchone()['c']
 
             return jsonify(
@@ -128,4 +128,5 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
