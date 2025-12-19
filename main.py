@@ -42,7 +42,7 @@ def get_conn():
 def ensure_table():
     """Create the patient_records table if it does not exist."""
     ddl = """
-    CREATE TABLE IF NOT EXISTS patient_record (
+    CREATE TABLE IF NOT EXISTS patient_records (
         id INT AUTO_INCREMENT PRIMARY KEY,
         gender VARCHAR(10),
         age INT,
@@ -69,50 +69,51 @@ def insert():
     try:
         data = request.get_json(force=True)
 
-        # --- 1. basic feature presence ---
+        # Validate input
         if not all(f in data for f in EXPECTED_FEATURES):
             missing = [f for f in EXPECTED_FEATURES if f not in data]
             return jsonify(error=f"Missing fields: {missing}"), 400
 
-        # --- 2. gender must be Male or Female ---
-        gender = str(data.get("gender", "")).strip().capitalize()
-        if gender not in {"Male", "Female"}:
-            return jsonify(error="gender must be 'Male' or 'Female'"), 400
-        data["gender"] = gender          # normalise
-
-        # --- 3. prediction ---
+        # Prepare prediction input
         X = pd.DataFrame([data])[EXPECTED_FEATURES]
-        pred_int = int(pref.predict(X)[0])
 
-        # --- 4. insert ---
+        # Run prediction using pipeline
+        pred_int = int(pref.predict(X)[0])
+        proba = pref.predict_proba(X)[0].tolist()
+
+        # Store in database
         cols = EXPECTED_FEATURES + ["TriageLevel"]
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
-        sql = f"INSERT INTO patient_record ({','.join(cols)}) VALUES ({placeholders})"
+        sql = f"INSERT INTO patient_records ({','.join(cols)}) VALUES ({placeholders})"
 
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute(sql, vals)
             conn.commit()
 
-        # --- 5. response ---
+        # Return response
         return jsonify(
             prediction=pred_int,
-            **{f: data[f] for f in EXPECTED_FEATURES}
+            probability={
+                "not_urgent": round(proba[0], 3),
+                "urgent": round(proba[1], 3)
+            }
         )
-
     except Exception as e:
         return jsonify(error=str(e)), 400
+
+
 @app.get("/summary")
 def summary():
     """Return all patient records and triage level stats."""
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            cur.execute("SELECT * FROM patient_record ORDER BY created_at DESC")
+            cur.execute("SELECT * FROM patient_records ORDER BY created_at DESC")
             records = cur.fetchall()
 
-            cur.execute("SELECT COUNT(*) AS c FROM patient_record WHERE TriageLevel=0")
+            cur.execute("SELECT COUNT(*) AS c FROM patient_records WHERE TriageLevel=0")
             count_0 = cur.fetchone()['c']
-            cur.execute("SELECT COUNT(*) AS c FROM patient_record WHERE TriageLevel=1")
+            cur.execute("SELECT COUNT(*) AS c FROM patient_records WHERE TriageLevel=1")
             count_1 = cur.fetchone()['c']
 
             return jsonify(
@@ -128,5 +129,3 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
-
-
