@@ -107,7 +107,7 @@ def summary():
     """Return all patient records and triage level stats."""
     try:
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
-            cur.execute("SELECT * FROM aiReferral ORDER BY created_at DESC")
+            cur.execute("SELECT * FROM aiReferral ORDER BY id DESC")
             records = cur.fetchall()
 
             cur.execute("SELECT COUNT(*) AS c FROM aiReferral WHERE TriageLevel=0")
@@ -128,4 +128,5 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
