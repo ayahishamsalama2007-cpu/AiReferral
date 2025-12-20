@@ -62,7 +62,6 @@ def ensure_table():
         conn.commit()
 
 # ---------- Routes ----------
-
 @app.post("/insert")
 def insert():
     """Insert a new patient record, run prediction, save to DB, return saved row."""
@@ -91,7 +90,7 @@ def insert():
             new_id = cur.lastrowid                       # MySQL auto-increment id
             # read the row we just wrote
             cur.execute(
-                "SELECT * FROM aiReferral WHERE id = %s",
+                "SELECT * FROM patient_records WHERE id = %s",
                 (new_id,)
             )
             saved_row = cur.fetchone()                   # dict with all columns
@@ -102,6 +101,45 @@ def insert():
 
     except Exception as e:
         return jsonify(error=str(e)), 400
+# @app.post("/insert")
+# def insert():
+#     """Insert a new patient record, run prediction, save to DB, return saved row."""
+#     try:
+#         data = request.get_json(force=True)
+
+#         # --- basic validation ---
+#         if not all(f in data for f in EXPECTED_FEATURES):
+#             missing = [f for f in EXPECTED_FEATURES if f not in data]
+#             return jsonify(error=f"Missing fields: {missing}"), 400
+
+#         # --- prediction ---
+#         X = pd.DataFrame([data])[EXPECTED_FEATURES]
+#         pred_int = int(pref.predict(X)[0])
+
+#         # --- insert ---
+#         cols = EXPECTED_FEATURES + ["TriageLevel"]
+#         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
+#         placeholders = ",".join(["%s"] * len(cols))
+#         sql_insert = f"""
+#             INSERT INTO patient_records ({','.join(cols)})
+#             VALUES ({placeholders})
+#         """
+#         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
+#             cur.execute(sql_insert, vals)
+#             new_id = cur.lastrowid                       # MySQL auto-increment id
+#             # read the row we just wrote
+#             cur.execute(
+#                 "SELECT * FROM aiReferral WHERE id = %s",
+#                 (new_id,)
+#             )
+#             saved_row = cur.fetchone()                   # dict with all columns
+#             conn.commit()
+
+#         # --- send the database row back ---
+#         return jsonify(saved_row), 201
+
+#     except Exception as e:
+#         return jsonify(error=str(e)), 400
 @app.get("/summary")
 def summary():
     """Return all patient records and triage level stats."""
@@ -128,6 +166,7 @@ def summary():
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
 
 
