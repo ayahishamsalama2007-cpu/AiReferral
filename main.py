@@ -82,7 +82,7 @@ def insert():
         vals = [data[f] for f in EXPECTED_FEATURES] + [pred_int]
         placeholders = ",".join(["%s"] * len(cols))
         sql_insert = f"""
-            INSERT INTO patient_records ({','.join(cols)})
+            INSERT INTO aiReferral ({','.join(cols)})
             VALUES ({placeholders})
         """
         with get_conn() as conn, conn.cursor(dictionary=True) as cur:
@@ -90,7 +90,7 @@ def insert():
             new_id = cur.lastrowid                       # MySQL auto-increment id
             # read the row we just wrote
             cur.execute(
-                "SELECT * FROM patient_records WHERE id = %s",
+                "SELECT * FROM aiReferral WHERE id = %s",
                 (new_id,)
             )
             saved_row = cur.fetchone()                   # dict with all columns
@@ -161,11 +161,30 @@ def summary():
             )
     except Exception as e:
         return jsonify(error=str(e)), 500
+        
+@app.get("/record/<int:record_id>")
+def get_record_by_id(record_id):
+    """Return one patient record by primary-key id."""
+    try:
+        with get_conn() as conn, conn.cursor(dictionary=True) as cur:
+            cur.execute(
+                "SELECT * FROM aiReferral WHERE id = %s",
+                (record_id,)
+            )
+            row = cur.fetchone()
 
+        if row is None:
+            return jsonify(error="Record not found"), 404
+
+        return jsonify(row), 200
+
+    except Error as e:
+        return jsonify(error=str(e)), 500
 # ---------- Start Server ----------
 if __name__ == "__main__":
     ensure_table()
     app.run(host="0.0.0.0", port=8080, debug=False)
+
 
 
 
